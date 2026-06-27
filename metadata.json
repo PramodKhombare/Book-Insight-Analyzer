@@ -1,0 +1,6 @@
+{
+  "name": "Book Insight Analyzer",
+  "description": "An interactive tool to upload and analyze books in PDF, TXT, and DOCX formats, extracting concise summaries, timeless insights, practical applications, and evaluating their category rankings.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
