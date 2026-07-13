@@ -115,6 +115,143 @@ const SAMPLE_BOOKS: Record<string, string> = {
   'deep-work': 'Deep Work by Cal Newport. Rules for focused success in a distracted world. Defines deep work as professional activities performed in a state of distraction-free concentration that push cognitive capabilities. Discusses deep work practices, minimizing shallow work, embracing boredom, quitting social media, and protecting focus blocks.'
 };
 
+// In-memory cache memory store for registered users' usage history
+interface UserCache {
+  email: string;
+  provider: 'google' | 'email';
+  name: string;
+  avatarUrl?: string;
+  history: any[];
+}
+
+const cacheMemoryStore = new Map<string, UserCache>();
+
+// Authentication endpoint supporting Gmail/Google and Email ID login
+app.post('/api/auth/login', (req, res) => {
+  const { email, provider, name } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email/Gmail ID is required for logging in.' });
+  }
+
+  // Validate if it is a Gmail ID when using Google provider
+  if (provider === 'google' && !email.toLowerCase().endsWith('@gmail.com') && !email.toLowerCase().endsWith('@googlemail.com')) {
+    return res.status(400).json({ error: 'Please log in with a valid Gmail ID.' });
+  }
+  
+  const userKey = email.toLowerCase();
+  
+  // Retrieve from in-memory cache or create a new entry
+  let cachedUser = cacheMemoryStore.get(userKey);
+  if (!cachedUser) {
+    cachedUser = {
+      email,
+      provider: provider || 'email',
+      name: name || email.split('@')[0],
+      avatarUrl: provider === 'google' ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80' : undefined,
+      history: []
+    };
+    cacheMemoryStore.set(userKey, cachedUser);
+  }
+
+  return res.json({
+    message: 'Login successful. Usage history synchronized with server cache memory.',
+    user: {
+      email: cachedUser.email,
+      provider: cachedUser.provider,
+      name: cachedUser.name,
+      avatarUrl: cachedUser.avatarUrl,
+    },
+    history: cachedUser.history
+  });
+});
+
+// Sync usage history to server cache memory
+app.post('/api/user/history', (req, res) => {
+  const { email, history } = req.body;
+  const userKey = (email || '').toLowerCase();
+  if (!userKey) {
+    return res.status(400).json({ error: 'User identifier required for cache storage.' });
+  }
+
+  let cachedUser = cacheMemoryStore.get(userKey);
+  if (!cachedUser) {
+    // If not found, create a placeholder in cache
+    cachedUser = {
+      email: email,
+      provider: email.toLowerCase().endsWith('@gmail.com') ? 'google' : 'email',
+      name: email.split('@')[0],
+      history: []
+    };
+  }
+
+  // Update in-memory cache
+  cachedUser.history = history || [];
+  cacheMemoryStore.set(userKey, cachedUser);
+
+  return res.json({
+    message: 'Usage history synchronized successfully with server-side cache memory.',
+    historyCount: cachedUser.history.length
+  });
+});
+
+// Get user history from cache memory
+app.get('/api/user/history', (req, res) => {
+  const { email } = req.query;
+  const userKey = String(email || '').toLowerCase();
+  if (!userKey) {
+    return res.status(400).json({ error: 'User identifier required.' });
+  }
+
+  const cachedUser = cacheMemoryStore.get(userKey);
+  if (!cachedUser) {
+    return res.json({
+      history: []
+    });
+  }
+
+  return res.json({
+    history: cachedUser.history
+  });
+});
+
+// Robust helper to parse and extract JSON from model responses (handles potential markdown wrapping or conversational prefixes)
+const parseStructuredResponse = (text: string): any => {
+  const trimmed = text.trim();
+  
+  // Try direct parse first
+  try {
+    return JSON.parse(trimmed);
+  } catch (directError) {
+    console.warn('Direct JSON parse failed, trying alternative extractions...', directError);
+  }
+
+  // Try extraction of ```json ... ``` or ``` ... ``` markdown code block
+  try {
+    const jsonBlockRegex = /```(?:json)?\s*([\s\S]*?)\s*```/i;
+    const match = trimmed.match(jsonBlockRegex);
+    if (match && match[1]) {
+      return JSON.parse(match[1].trim());
+    }
+  } catch (blockError) {
+    console.warn('Markdown code block extraction failed...', blockError);
+  }
+
+  // Try extracting everything from the first curly brace '{' to the last curly brace '}'
+  try {
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const candidate = trimmed.substring(firstBrace, lastBrace + 1);
+      return JSON.parse(candidate.trim());
+    }
+  } catch (braceError) {
+    console.warn('Curly brace extraction failed...', braceError);
+  }
+
+  // If everything failed, throw a descriptive parsing error
+  throw new Error(`Failed to parse structured response as JSON. Raw output: ${trimmed.substring(0, 150)}...`);
+};
+
 // Main Analysis API Route
 app.post('/api/analyze-book', upload.single('file'), async (req, res) => {
   try {
@@ -251,7 +388,7 @@ app.post('/api/analyze-book', upload.single('file'), async (req, res) => {
       throw new Error('Received empty response from the analysis model.');
     }
 
-    const parsedData = JSON.parse(responseText.trim());
+    const parsedData = parseStructuredResponse(responseText);
     
     return res.json({
       ...parsedData,

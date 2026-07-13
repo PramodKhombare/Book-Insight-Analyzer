@@ -19,11 +19,18 @@ import {
   AlertCircle,
   Check,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  Mail,
+  Lock,
+  User,
+  LogOut,
+  Key,
+  Shield,
+  ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
-import { BookAnalysisResult } from './types';
+import { BookAnalysisResult, UserProfile } from './types';
 
 // Constants for categories and colors
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; accent: string }> = {
@@ -61,32 +68,120 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load history from localStorage
-  useEffect(() => {
+  // User Profile configuration
+  const [currentUser, setCurrentUser] = useState<UserProfile>({
+    email: 'scholar@gmail.com',
+    name: 'Scholar',
+    provider: 'email',
+  });
+
+  // Fetch usage history from server-side cache memory
+  const fetchUserHistory = async (user: UserProfile) => {
     try {
-      const savedHistory = localStorage.getItem('book_analyzer_history');
-      if (savedHistory) {
-        const parsed = JSON.parse(savedHistory);
-        setHistory(parsed);
-        if (parsed.length > 0) {
-          setCurrentAnalysis(parsed[0]);
+      const identifier = user.email;
+      const url = `/api/user/history?email=${encodeURIComponent(identifier)}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.history && data.history.length > 0) {
+          setHistory(data.history);
+          setCurrentAnalysis(data.history[0]);
+          localStorage.setItem('book_analyzer_history', JSON.stringify(data.history));
+        } else {
+          // If no history on server, check local storage specific to this user
+          const localHist = localStorage.getItem(`book_analyzer_history_${identifier}`);
+          if (localHist) {
+            const parsed = JSON.parse(localHist);
+            setHistory(parsed);
+            setCurrentAnalysis(parsed[0]);
+            // Sync to server cache
+            await syncHistoryWithServer(user, parsed);
+          } else {
+            setHistory([]);
+            setCurrentAnalysis(null);
+          }
         }
       }
+    } catch (err) {
+      console.error('Error fetching user history from server cache:', err);
+    }
+  };
+
+  // Sync usage history with server-side cache memory
+  const syncHistoryWithServer = async (user: UserProfile, updatedHistory: BookAnalysisResult[]) => {
+    try {
+      const identifier = user.email;
+      await fetch('/api/user/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: identifier,
+          history: updatedHistory
+        })
+      });
+      // Save specific user's history in local cache too
+      localStorage.setItem(`book_analyzer_history_${identifier}`, JSON.stringify(updatedHistory));
+    } catch (err) {
+      console.error('Error syncing history with server cache:', err);
+    }
+  };
+
+  // Check login session on mount
+  useEffect(() => {
+    try {
+      const savedUser = localStorage.getItem('book_analyzer_user');
+      let user: UserProfile;
+      if (savedUser) {
+        user = JSON.parse(savedUser) as UserProfile;
+        setCurrentUser(user);
+      } else {
+        user = {
+          email: 'scholar@gmail.com',
+          name: 'Scholar',
+          provider: 'email',
+        };
+        localStorage.setItem('book_analyzer_user', JSON.stringify(user));
+      }
+      fetchUserHistory(user);
     } catch (e) {
-      console.error('Failed to load history from local storage', e);
+      console.error('Failed to load user from localStorage', e);
     }
   }, []);
 
-  // Save history to localStorage
+  // Reset session and clear analysis history from cache memory
+  const handleResetSession = async () => {
+    try {
+      const identifier = currentUser.email;
+      await fetch('/api/user/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: identifier,
+          history: []
+        })
+      });
+      localStorage.removeItem(`book_analyzer_history_${identifier}`);
+    } catch (e) {
+      console.error('Error clearing history on server:', e);
+    }
+    localStorage.removeItem('book_analyzer_history');
+    setHistory([]);
+    setCurrentAnalysis(null);
+  };
+
+  // Save history to local state and sync with cache memory
   const saveToHistory = (newAnalysis: BookAnalysisResult) => {
     try {
-      // Remove previous duplicate if any
       const updatedHistory = [
         newAnalysis,
         ...history.filter(item => item.title.toLowerCase() !== newAnalysis.title.toLowerCase())
       ].slice(0, 10); // Keep top 10 items
       setHistory(updatedHistory);
       localStorage.setItem('book_analyzer_history', JSON.stringify(updatedHistory));
+      
+      if (currentUser) {
+        syncHistoryWithServer(currentUser, updatedHistory);
+      }
     } catch (e) {
       console.error('Failed to save to history', e);
     }
@@ -313,6 +408,8 @@ ${top5Evaluation.rankingJustification}
 
   const catStyle = getCategoryStyles(currentAnalysis?.category);
 
+
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
       
@@ -331,10 +428,33 @@ ${top5Evaluation.rankingJustification}
             </div>
           </div>
           
-          <div className="flex items-center space-x-3">
-            <span className="text-xs bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full font-medium font-mono">
-              v1.1 (Gemini 3.5 Flash)
-            </span>
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2.5 bg-slate-50 border border-slate-200 p-1.5 pr-3 rounded-full">
+              {currentUser.avatarUrl ? (
+                <img 
+                  src={currentUser.avatarUrl} 
+                  alt={currentUser.name} 
+                  referrerPolicy="no-referrer"
+                  className="w-7 h-7 rounded-full object-cover border border-indigo-200" 
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs border border-indigo-200">
+                  {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="text-left hidden sm:block">
+                <p className="text-xs font-bold text-slate-800 leading-none">{currentUser.name}</p>
+                <p className="text-[9px] text-slate-400 font-mono leading-none mt-1">{currentUser.email}</p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleResetSession}
+              className="p-2 bg-slate-100 hover:bg-red-50 hover:text-red-600 text-slate-500 rounded-lg transition-colors cursor-pointer"
+              title="Reset Workspace History"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </header>

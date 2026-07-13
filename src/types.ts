@@ -30,3 +30,11 @@ export interface BookAnalysisResult {
   charCount?: number;
   analyzedAt: string; // ISO string added by client
 }
+
+export interface UserProfile {
+  email: string;
+  name: string;
+  provider: 'google' | 'email';
+  avatarUrl?: string;
+}
+
