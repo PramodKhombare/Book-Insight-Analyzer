@@ -319,10 +319,12 @@ app.post('/api/analyze-book', upload.single('file'), async (req, res) => {
 
       Please fulfill these requirements:
       1. Categorize the book into one of the specified categories: "problem-solving", "decision making", "time management", or determine an appropriate highly-relevant alternative category if it does not fit those three.
-      2. Provide a beautiful, comprehensive, and structured summary in markdown format of the book's core thesis, arguments, and content.
+      2. Provide a beautiful, highly focused, and structured summary in markdown format of the book's core thesis, arguments, and content.
       3. Extract 5 to 7 powerful, timeless, and actionable insights that help build work and life skills.
       4. Advise on practical applications: how to realistically translate these insights into daily habits, rituals, systems, and principles.
       5. Evaluate if this book ranks among the Top 5 books in its category. Provide a robust, comparative, and highly objective justification citing other seminal books in the same space.
+
+      CRITICAL FOR PERFORMANCE: Keep all text generated concise, direct, and tightly written. Avoid verbose fluff, repetitive definitions, or unnecessary conversational filler to optimize speed and latency.
 
       Here is the book's content:
       --- START BOOK CONTENT ---
@@ -331,7 +333,7 @@ app.post('/api/analyze-book', upload.single('file'), async (req, res) => {
     `;
 
     const response = await callGeminiWithRetry(prompt, {
-      systemInstruction: "You are an analytical, deeply thoughtful book mentor. You extract deep wisdom and practical principles, avoiding generic business buzzwords.",
+      systemInstruction: "You are an analytical, deeply thoughtful book mentor. You extract deep wisdom and practical principles, avoiding generic business buzzwords. Be direct and concise.",
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -344,7 +346,7 @@ app.post('/api/analyze-book', upload.single('file'), async (req, res) => {
           },
           summary: { 
             type: Type.STRING, 
-            description: "A comprehensive summary of the book's core thesis and chapter insights in markdown format." 
+            description: "A highly focused, robust, structured summary of the book's core thesis and chapter insights in markdown format (maximum 250-300 words)." 
           },
           timelessInsights: {
             type: Type.ARRAY,
@@ -353,8 +355,8 @@ app.post('/api/analyze-book', upload.single('file'), async (req, res) => {
               type: Type.OBJECT,
               properties: {
                 insight: { type: Type.STRING, description: "A punchy, memorable insight statement." },
-                description: { type: Type.STRING, description: "Deep explanation of the insight's wisdom." },
-                actionableTakeaway: { type: Type.STRING, description: "An actionable takeaway or concrete advice for implementing this." }
+                description: { type: Type.STRING, description: "A deep, concise explanation of the insight's wisdom (maximum 2-3 sentences)." },
+                actionableTakeaway: { type: Type.STRING, description: "An actionable takeaway or concrete advice for implementing this (maximum 1-2 sentences)." }
               },
               required: ["insight", "description", "actionableTakeaway"]
             }
@@ -363,10 +365,10 @@ app.post('/api/analyze-book', upload.single('file'), async (req, res) => {
             type: Type.OBJECT,
             description: "Advice on how to realistically apply the insights.",
             properties: {
-              habits: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Daily/weekly habits to form." },
-              rituals: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Morning, evening, or workplace rituals to establish." },
-              systems: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Structured systems, templates, trackers, or processes to maintain." },
-              principles: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Core guiding rules for decision making and mindset." }
+              habits: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Daily/weekly habits to form. List up to 3-4 items max." },
+              rituals: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Morning, evening, or workplace rituals to establish. List up to 3-4 items max." },
+              systems: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Structured systems, templates, trackers, or processes to maintain. List up to 3-4 items max." },
+              principles: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Core guiding rules for decision making and mindset. List up to 3-4 items max." }
             },
             required: ["habits", "rituals", "systems", "principles"]
           },
@@ -374,7 +376,7 @@ app.post('/api/analyze-book', upload.single('file'), async (req, res) => {
             type: Type.OBJECT,
             properties: {
               isTop5: { type: Type.BOOLEAN, description: "True if this book ranks in the top 5 in its category." },
-              rankingJustification: { type: Type.STRING, description: "A detailed comparison with other seminal works in the category, detailing why it deserves or does not deserve a top 5 spot." }
+              rankingJustification: { type: Type.STRING, description: "A concise comparative justification with other seminal works in the category, detailing why it deserves or does not deserve a top 5 spot (maximum 3-4 sentences)." }
             },
             required: ["isTop5", "rankingJustification"]
           }
@@ -403,6 +405,14 @@ app.post('/api/analyze-book', upload.single('file'), async (req, res) => {
       error: error.message || 'An unexpected error occurred during book analysis.'
     });
   }
+});
+
+// Error handling middleware to ensure all server errors are returned as JSON (not HTML)
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Express uncaught error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'An internal server error occurred.'
+  });
 });
 
 // Configure Vite or Static Files

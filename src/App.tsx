@@ -253,8 +253,27 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Server error occurred during analysis.');
+        let errorMessage = 'Server error occurred during analysis.';
+        try {
+          const errData = await response.json();
+          errorMessage = errData.error || errorMessage;
+        } catch (_) {
+          // Response is not JSON (probably HTML or raw text due to proxy timeout or crash)
+          try {
+            const rawText = await response.text();
+            if (rawText.includes('<pre>')) {
+              const preMatch = rawText.match(/<pre>([\s\S]*?)<\/pre>/);
+              if (preMatch) errorMessage = preMatch[1].trim();
+            } else if (rawText.includes('Gateway Timeout') || response.status === 504) {
+              errorMessage = 'The analysis request timed out. We are optimizing our models to generate responses faster. Please try again.';
+            } else if (rawText.length < 200 && rawText.trim()) {
+              errorMessage = rawText.trim();
+            }
+          } catch (textErr) {
+            console.error('Failed to parse text error body:', textErr);
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
@@ -286,8 +305,27 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Server error occurred.');
+        let errorMessage = 'Server error occurred.';
+        try {
+          const errData = await response.json();
+          errorMessage = errData.error || errorMessage;
+        } catch (_) {
+          // Response is not JSON (probably HTML or raw text due to proxy timeout or crash)
+          try {
+            const rawText = await response.text();
+            if (rawText.includes('<pre>')) {
+              const preMatch = rawText.match(/<pre>([\s\S]*?)<\/pre>/);
+              if (preMatch) errorMessage = preMatch[1].trim();
+            } else if (rawText.includes('Gateway Timeout') || response.status === 504) {
+              errorMessage = 'The analysis request timed out. We are optimizing our models to generate responses faster. Please try again.';
+            } else if (rawText.length < 200 && rawText.trim()) {
+              errorMessage = rawText.trim();
+            }
+          } catch (textErr) {
+            console.error('Failed to parse text error body:', textErr);
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
