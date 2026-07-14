@@ -51,6 +51,40 @@ const READING_PHASES = [
   'Polishing report elements...'
 ];
 
+async function parseApiErrorResponse(
+  response: Response,
+  fallback: string
+): Promise<string> {
+  const rawText = await response.text();
+
+  try {
+    const errData = JSON.parse(rawText);
+    if (errData?.error) return errData.error;
+    if (errData?.message) return errData.message;
+  } catch {
+    // Response body is not JSON — fall through to text/HTML parsing below.
+  }
+
+  if (rawText.includes('<pre>')) {
+    const preMatch = rawText.match(/<pre>([\s\S]*?)<\/pre>/);
+    if (preMatch) return preMatch[1].trim();
+  }
+
+  if (rawText.includes('Gateway Timeout') || response.status === 504) {
+    return 'The analysis request timed out. We are optimizing our models to generate responses faster. Please try again.';
+  }
+
+  if (rawText.length < 500 && rawText.trim()) {
+    return rawText.trim();
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    return 'API authentication failed. Please verify your GEMINI_API_KEY is valid.';
+  }
+
+  return `${fallback} (HTTP ${response.status})`;
+}
+
 export default function App() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -253,26 +287,10 @@ export default function App() {
       });
 
       if (!response.ok) {
-        let errorMessage = 'Server error occurred during analysis.';
-        try {
-          const errData = await response.json();
-          errorMessage = errData.error || errorMessage;
-        } catch (_) {
-          // Response is not JSON (probably HTML or raw text due to proxy timeout or crash)
-          try {
-            const rawText = await response.text();
-            if (rawText.includes('<pre>')) {
-              const preMatch = rawText.match(/<pre>([\s\S]*?)<\/pre>/);
-              if (preMatch) errorMessage = preMatch[1].trim();
-            } else if (rawText.includes('Gateway Timeout') || response.status === 504) {
-              errorMessage = 'The analysis request timed out. We are optimizing our models to generate responses faster. Please try again.';
-            } else if (rawText.length < 200 && rawText.trim()) {
-              errorMessage = rawText.trim();
-            }
-          } catch (textErr) {
-            console.error('Failed to parse text error body:', textErr);
-          }
-        }
+        const errorMessage = await parseApiErrorResponse(
+          response,
+          'Server error occurred during analysis.'
+        );
         throw new Error(errorMessage);
       }
 
@@ -305,26 +323,10 @@ export default function App() {
       });
 
       if (!response.ok) {
-        let errorMessage = 'Server error occurred.';
-        try {
-          const errData = await response.json();
-          errorMessage = errData.error || errorMessage;
-        } catch (_) {
-          // Response is not JSON (probably HTML or raw text due to proxy timeout or crash)
-          try {
-            const rawText = await response.text();
-            if (rawText.includes('<pre>')) {
-              const preMatch = rawText.match(/<pre>([\s\S]*?)<\/pre>/);
-              if (preMatch) errorMessage = preMatch[1].trim();
-            } else if (rawText.includes('Gateway Timeout') || response.status === 504) {
-              errorMessage = 'The analysis request timed out. We are optimizing our models to generate responses faster. Please try again.';
-            } else if (rawText.length < 200 && rawText.trim()) {
-              errorMessage = rawText.trim();
-            }
-          } catch (textErr) {
-            console.error('Failed to parse text error body:', textErr);
-          }
-        }
+        const errorMessage = await parseApiErrorResponse(
+          response,
+          'Server error occurred during sample analysis.'
+        );
         throw new Error(errorMessage);
       }
 
@@ -409,7 +411,7 @@ ${timelessInsights.map((ins, idx) => `
 
 ---
 
-## 🛠️ PRACTICAL MASTER MASTER BLUEPRINT
+## 🛠️ PRACTICAL MASTER BLUEPRINT
 
 ### Daily/Weekly Habits
 ${practicalApplication.habits.map(h => `- [ ] ${h}`).join('\n')}
