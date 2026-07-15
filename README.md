@@ -6,9 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-View app in AI Studio: https://ai.studio/apps/d90db9e8-8ab7-438d-ba85-a7c6f5c1d6b9
-
-View app: https://book-insight-analyzer.vercel.app/
+View your app in AI Studio: https://ai.studio/apps/d90db9e8-8ab7-438d-ba85-a7c6f5c1d6b9
 
 ## Run Locally
 

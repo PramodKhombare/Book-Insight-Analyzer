@@ -7,9 +7,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 
-// Load .env first, then .env.local (README uses .env.local for local dev keys).
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local'), override: true });
+dotenv.config();
 
 const app = express();
 const PORT = 3000;
@@ -25,13 +23,16 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB limit
 });
 
-// Warn at startup if GEMINI_API_KEY is missing
-if (!process.env.GEMINI_API_KEY) {
-  console.warn(
-    'GEMINI_API_KEY is not set at startup. Add it to .env or .env.local, or configure it in Secrets.'
-  );
-}
-
+// Initialize Gemini Client
+const apiKey = process.env.GEMINI_API_KEY;
+const ai = new GoogleGenAI({
+  apiKey: apiKey,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    },
+  },
+});
 
 // Helper to parse PDF documents cleanly
 const parsePdf = async (buffer: Buffer): Promise<string> => {
@@ -67,7 +68,6 @@ const parseDocx = async (buffer: Buffer): Promise<string> => {
 
 // Robust helper to query Gemini models with exponential backoff and model fallbacks (handles transient 503/UNAVAILABLE errors)
 const callGeminiWithRetry = async (
-  ai: GoogleGenAI,
   prompt: string,
   config: any,
   initialModel: string = 'gemini-3.5-flash',
@@ -105,17 +105,6 @@ const callGeminiWithRetry = async (
     }
   }
   throw lastError;
-};
-
-const extractErrorMessage = (error: any): string => {
-  if (!error) return 'An unexpected error occurred during book analysis.';
-  if (typeof error === 'string') return error;
-  if (error.message) return error.message;
-  if (error.error?.message) return error.error.message;
-  if (error.status && error.statusText) {
-    return `${error.status} ${error.statusText}`;
-  }
-  return 'An unexpected error occurred during book analysis.';
 };
 
 // Mock library of popular books for instant analysis/demos
@@ -264,32 +253,13 @@ const parseStructuredResponse = (text: string): any => {
 };
 
 // Main Analysis API Route
-app.post('/api/analyze-book', (req, res, next) => {
-  upload.single('file')(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({
-        error: err.message || 'File upload failed. Please use a PDF, DOCX, or TXT under 20 MB.',
-      });
-    }
-    next();
-  });
-}, async (req, res) => {
+app.post('/api/analyze-book', upload.single('file'), async (req, res) => {
   try {
-    const currentApiKey = process.env.GEMINI_API_KEY;
-    if (!currentApiKey) {
+    if (!apiKey) {
       return res.status(500).json({
         error: 'Gemini API key is not configured on the server. Please add GEMINI_API_KEY in Secrets.'
       });
     }
-
-    const ai = new GoogleGenAI({
-      apiKey: currentApiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
 
     let textContent = '';
     let fileName = '';
@@ -362,7 +332,7 @@ app.post('/api/analyze-book', (req, res, next) => {
       --- END BOOK CONTENT ---
     `;
 
-    const response = await callGeminiWithRetry(ai, prompt, {
+    const response = await callGeminiWithRetry(prompt, {
       systemInstruction: "You are an analytical, deeply thoughtful book mentor. You extract deep wisdom and practical principles, avoiding generic business buzzwords. Be direct and concise.",
       responseMimeType: 'application/json',
       responseSchema: {
@@ -431,12 +401,9 @@ app.post('/api/analyze-book', (req, res, next) => {
 
   } catch (error: any) {
     console.error('Error analyzing book:', error);
-    const message = extractErrorMessage(error);
-    const status =
-      error?.status === 400 || error?.status === 401 || error?.status === 403
-        ? error.status
-        : 500;
-    return res.status(status).json({ error: message });
+    return res.status(500).json({
+      error: error.message || 'An unexpected error occurred during book analysis.'
+    });
   }
 });
 
